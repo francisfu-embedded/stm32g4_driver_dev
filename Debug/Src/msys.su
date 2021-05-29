@@ -1,0 +1,3 @@
+msys.c:124:12:msys_pwr_enter_hp_range	4	static
+msys.c:144:16:msys_pwr_clk_enable	4	static
+msys.c:149:13:msys_system_clk_config	16	static

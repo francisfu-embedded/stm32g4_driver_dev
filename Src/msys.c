@@ -44,22 +44,22 @@
 #define RCC_CR_HSE_CRYSTAL			(RCC_CR_HSEON_ON|RCC_CR_HSEBYP_OFF)
 
 
-//pll config regs bit fields, pllclk_fre = crystal_freq * N/M /P
-#define RCC_PLLCFGR_PLLM			4ul			            //divides the 8MHz clock by 8, getting 1MHz
-#define RCC_PLLCFGR_PLLN			(180ul << 6u)			//vco freq times 360
-#define RCC_PLLCFGR_PLLP			(0ul << 16u)			//divide by 2, getting 180MHz output
-#define RCC_PLLCFGR_PLLSRC			(1ul << 22u)			//using HSE
-#define RCC_PLLCFGR_PLLQ			(2ul << 24u)            //unused dummy value
-#define RCC_PLLCFGR_PLLR			(2ul << 28u)			//unused dummy value
-
+//pll config regs bit fields, pllclk_freq = crystal_freq * N/M /R
+#define RCC_PLLCFGR_PLLM			((12ul - 1ul) << 4u)			    //divides the 24MHz clock by 12, getting 2MHz
+#define RCC_PLLCFGR_PLLN			(120ul << 8u)			//vco freq times 120
+#define RCC_PLLCFGR_PLLP			(0ul << 27u)			//not used
+#define RCC_PLLCFGR_PLLSRC			(3ul << 0u)				//using HSE
+#define RCC_PLLCFGR_PLLQ			(3ul << 21u)            //not used
+#define RCC_PLLCFGR_PLLR			(0ul << 25u)			//divide by 2
+#define RCC_PLLCFGR_PLLREN          (1ul << 24u)
 #define RCC_PLLCFGR_SETUP           (RCC_PLLCFGR_PLLM|RCC_PLLCFGR_PLLN|RCC_PLLCFGR_PLLP|\
-									RCC_PLLCFGR_PLLSRC|RCC_PLLCFGR_PLLQ)
+									RCC_PLLCFGR_PLLSRC|RCC_PLLCFGR_PLLQ|RCC_PLLCFGR_PLLR)
 
-#define RCC_CFGR_SW_PLLP			(2ul << 0u)				//use pllp as system clock
-#define RCC_CFGR_PPRE1_APB1_DIV4	(5ul << 10u)			//APB2 & APB2 clock divide by 4
-#define RCC_CFGR_PPRE2_APB2_DIV4	(5ul << 13u)
-#define RCC_CFGR_SETUP				(RCC_CFGR_SW_PLLP|RCC_CFGR_PPRE1_APB1_DIV4|\
-									RCC_CFGR_PPRE2_APB2_DIV4)
+#define RCC_CFGR_SW_PLL			(2ul << 0u)				//use pllp as system clock
+#define RCC_CFGR_PPRE1_DIV1	(0ul << 8u)			//APB2 & APB2 clock both not divided
+#define RCC_CFGR_PPRE2_DIV1	(0ul << 11u)
+#define RCC_CFGR_SETUP				(RCC_CFGR_SW_PLL|RCC_CFGR_PPRE1_DIV1|\
+									RCC_CFGR_PPRE2_DIV1)
 
 #define RCC_APB1ENR_PWREN_ON		(1ul << 28u)
 
@@ -67,14 +67,18 @@
 //bit field for PWR registers
 //
 
-#define PWR_CR1_VOS_RANGE1          (2ul << 9u)
+#define PWR_CR1_VOS_RANGE1          (1ul << 9u)
 
 #define PWR_SR2_VOSF_ON				(1ul << 10u)
+
+#define PWR_CR5_R1MODE_ON           (1ul << 8u)
+#define PWR_CR5_R1MODE_OFF          (0ul << 8u)
 
 //
 //bit fields for FLASH registers
 //
-#define FLASH_ACR_LATENCY           (5ul << 0u)
+#define FLASH_ACR_LATENCY_MASK      (15ul << 0u)
+#define FLASH_ACR_LATENCY_5         (5ul << 0u)
 
 
 
@@ -102,7 +106,8 @@ local flash_reg_set *flash_regs = (flash_reg_set *) FLASH_BASE_ADDR;
 //-------------------------------------------------------------------------------
 
 //local function prototypes
-void msys_pwr_r1_normal(void);
+local void msys_pwr_enter_hp_range(void);
+
 
 //global function prototypes
 void msys_pwr_clk_enable(void);
@@ -113,12 +118,22 @@ void msys_system_clk_config(bool hse_bypassed);
 //local functions
 //-------------------------------------------------------------------------------
 
-local void msys_pwr_r1_normal(void)
+//
+// function that moves the voltage scaling management to high performance range
+//
+local void msys_pwr_enter_hp_range(void)
 {
+
 	//change to range 1 and check completion status
 	pwr_regs->pwr_cr1 = PWR_CR1_VOS_RANGE1;
 	while(pwr_regs->pwr_sr2 & PWR_SR2_VOSF_ON);
 
+	//change flash latency
+	flash_regs->flash_acr &=~ FLASH_ACR_LATENCY_MASK;
+	flash_regs->flash_acr |= FLASH_ACR_LATENCY_5;
+
+	//enter region 1 boost mode
+	pwr_regs->pwr_cr5 = PWR_CR5_R1MODE_OFF;
 
 }
 
@@ -133,45 +148,36 @@ global il void msys_pwr_clk_enable (void)
 
 global void msys_system_clk_config(bool hse_bypassed)
 {
-	//enable writings to pwr registers first
+	//enable writings to pwr registers first and then enter range 1
 	msys_pwr_clk_enable();
+	msys_pwr_enter_hp_range();
 
 	//configure the cr register based on whether hse is bypassed (crystal not used)
 	//the hsi clock source is not yet disabled
-	rcc_regs->rcc_cr |= hse_bypassed ? RCC_CR_HSE_BYPASSED : RCC_CR_HSE_CRYSTAL;
+	rcc_regs->rcc_cr &=~ RCC_CR_HSEBYP_ON;
+	rcc_regs->rcc_cr |= RCC_CR_HSEON_ON;
 
-	//wait till HSE is ready and stable
 	while(!(rcc_regs->rcc_cr & RCC_CR_HSERDY));
 
-	//set up the pll configure register before proceeding
-	rcc_regs->rcc_pllcfgr = RCC_PLLCFGR_SETUP;
+	//disable pll first before configuring
+	rcc_regs->rcc_cr &=~ RCC_CR_PLLON_ON;
+	while(rcc_regs->rcc_cr & RCC_CR_PLLRDY);
 
-	//enable pll
+	//set up the pll configure register and turn on pll again
+	rcc_regs->rcc_pllcfgr |= RCC_PLLCFGR_SETUP;
+
+	//re-enable pll and "R" output (to system clock)
 	rcc_regs->rcc_cr |= RCC_CR_PLLON_ON;
-
-	//enable over-drive in power registers
-	pwr_regs->pwr_cr |=  (PWR_CR_ODEN_ON);
-
-	//wait till  PWR_CSR_ODRDY bit cleared for switching
-	while(!(pwr_regs->pwr_csr & PWR_CSR_ODRDY_ON));
-
-	//set the over-drive switch
-	pwr_regs->pwr_cr |=  PWR_CR_ODSWEN_ON;
-
-	while(!(pwr_regs->pwr_csr & PWR_CSR_ODSWRDY_ON));
-
-	//configure flash latency
-	flash_regs->flash_acr = FLASH_ACR_LATENCY;
+	rcc_regs->rcc_pllcfgr |= RCC_PLLCFGR_PLLREN;
 
 	//wait till PLL is locked
 	while(!(rcc_regs->rcc_cr & RCC_CR_PLLRDY));
 
-
-	//pull the clock switch to use pllclk as systemclk
+	//pull the clock switch to use pllclk as sysclk
 	//set up the clock prescalers for ahb, apb1 and apb2
-	//ahb1 runs at 180 MHz just as the system clock
-	//apb1 runs at 45 MHz
-	//ahb2 runs at 90 MHz
+	//ahb1 runs at 120 MHz just as the system clock
+	//apb1 runs at 120 MHz
+	//ahb2 runs at 120 MHz
 	rcc_regs->rcc_cfgr = RCC_CFGR_SETUP;
 
 

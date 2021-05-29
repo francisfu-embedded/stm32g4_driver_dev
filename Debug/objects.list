@@ -1,0 +1,3 @@
+"Src/msys.o"
+"Src/msys_test_main.o"
+"Startup/startup_stm32g431rbtx.o"

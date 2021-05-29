@@ -133,20 +133,20 @@ typedef struct
 	vo uint32 rcc_apb1enr1;
 	vo uint32 rcc_apb1enr2;
 	vo uint32 rcc_apb2enr;
-	vo uint32 rcc_rsvd4;
+	vo uint32 rcc_rsvd5;
 
 	vo uint32 rcc_ahb1smenr;
 	vo uint32 rcc_ahb2smenr;
 	vo uint32 rcc_ahb3smenr;
-	vo uint32 rcc_rsvd5;
+	vo uint32 rcc_rsvd6;
 
 	vo uint32 rcc_apb1smenr1;
 	vo uint32 rcc_apb1smenr2;
 	vo uint32 rcc_apb2smenr;
-	vo uint32 rcc_rsvd6;
+	vo uint32 rcc_rsvd7;
 
 	vo uint32 rcc_ccipr;
-	vo uint32 rcc_rsvd7;
+	vo uint32 rcc_rsvd8;
 	vo uint32 rcc_bdcr;
 	vo uint32 rcc_csr;
 	vo uint32 rcc_crrcr;
@@ -180,6 +180,7 @@ typedef struct
 	vo uint32 pwr_pdcrf;
 	vo uint32 pwr_pucrg;
 	vo uint32 pwr_pdcrg;
+	vo uint32 pwr_rsvd1[10];
 	vo uint32 pwr_cr5;
 } pwr_reg_set;
 
